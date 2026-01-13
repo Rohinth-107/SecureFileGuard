@@ -1,82 +1,78 @@
 import shutil
 from pathlib import Path
+from datetime import datetime
+from core.alert import log_event
 
 # Using a dot prefix makes it 'hidden' on most systems
 BACKUP_DIR = Path(".backups")
 
 def create_backup(file_path):
     """
-    Creates a secure backup and verifies its existence and size.
-    Returns: dict {status, message, backup_path}
+    Creates a timestamped versioned backup of the file.
+    Example: data.txt -> .backups/data.txt.20260113_183005.bak
     """
     try:
         source = Path(file_path).resolve()
-        
-        # Security Check: Ensure it's a file, not a folder
         if not source.is_file():
-            return {
-                "status": "error",
-                "message": f"Source '{source.name}' is not a valid file.",
-                "backup_path": None
-            }
+            return {"status": "error", "message": f"Source '{source.name}' not found.", "backup_path": None}
 
         BACKUP_DIR.mkdir(exist_ok=True)
-        dest = BACKUP_DIR / f"{source.name}.bak"
+        
+        # --- IMPROVEMENT: TIMESTAMPED VERSIONING ---
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dest = BACKUP_DIR / f"{source.name}.{timestamp}.bak"
 
-        # Perform the copy (preserves metadata)
+        # Perform the copy
         shutil.copy2(source, dest)
 
-        # Verification: Check if file exists and size matches
+        # Verification
         if dest.exists() and dest.stat().st_size == source.stat().st_size:
+            log_event("info", f"Versioned backup created: {dest.name}")
             return {
-                "status": "success",
-                "message": f"Backup verified for {source.name}.",
+                "status": "success", 
+                "message": f"Backup version {timestamp} verified.", 
                 "backup_path": str(dest)
             }
         else:
-            return {
-                "status": "error",
-                "message": "Backup created but size mismatch detected!",
-                "backup_path": None
-            }
+            log_event("error", f"Backup size mismatch for {source.name}")
+            return {"status": "error", "message": "Backup created but size mismatch detected!", "backup_path": None}
 
     except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Critical Backup Failure: {str(e)}",
-            "backup_path": None
-        }
+        log_event("critical", f"Backup failed for {file_path}: {str(e)}")
+        return {"status": "error", "message": f"Critical Backup Failure: {str(e)}", "backup_path": None}
 
 def restore_backup(file_path):
     """
-    Overwrites a corrupted/lost file with its healthy backup.
-    Returns: dict {status, message}
+    Automatically finds and restores the LATEST versioned backup for a file.
     """
     try:
         target = Path(file_path).resolve()
-        backup_path = BACKUP_DIR / f"{target.name}.bak"
-
-        if not backup_path.exists():
-            return {
-                "status": "error",
-                "message": f"No backup found for '{target.name}'."
-            }
-
-        # Restore the backup
-        shutil.copy2(backup_path, target)
         
+        # --- IMPROVEMENT: FIND LATEST VERSION ---
+        # Search for all files matching "filename.*.bak"
+        backups = sorted(BACKUP_DIR.glob(f"{target.name}.*.bak"))
+        
+        if not backups:
+            log_event("warning", f"Restore attempted but no backups found for {target.name}")
+            return {"status": "error", "message": f"No backup versions found for '{target.name}'."}
+
+        # Pick the last one in the sorted list (most recent timestamp)
+        latest_backup = backups[-1]
+
+        shutil.copy2(latest_backup, target)
+        
+        log_event("info", f"Restored latest version ({latest_backup.name}) to {target.name}")
         return {
-            "status": "success",
-            "message": f"File '{target.name}' successfully restored from backup."
+            "status": "success", 
+            "message": f"Restored successfully from version: {latest_backup.name}"
         }
 
-    except PermissionError:
-        return {
-            "status": "error",
-            "message": f"Permission denied: Ensure '{target.name}' is not open in another program."
-        }
     except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Restore failed: {str(e)}"
-        }
+        log_event("error", f"Restore failed for {file_path}: {str(e)}")
+        return {"status": "error", "message": f"Restore failed: {str(e)}"}
+
+def list_versions(file_path):
+    """Helper to list all available backup timestamps for a file."""
+    target_name = Path(file_path).name
+    backups = sorted(BACKUP_DIR.glob(f"{target_name}.*.bak"), reverse=True)
+    return [b.name for b in backups]

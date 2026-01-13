@@ -1,55 +1,39 @@
 import hashlib
 from pathlib import Path
+from core.alert import log_event  # <--- NEW
 
 def generate_hash(file_path):
-    """
-    Generates a SHA-256 hash of a file.
-    Handles absolute/relative paths and large files efficiently.
-    
-    Returns:
-        dict: {
-            'status': 'success' | 'error',
-            'hash': str or None,
-            'message': str
-        }
-    """
     sha256 = hashlib.sha256()
-    target_path = Path(file_path).resolve() # Converts to absolute path for reliability
+    target_path = Path(file_path).resolve()
 
     if not target_path.is_file():
-        return {
-            'status': 'error',
-            'hash': None,
-            'message': f"File not found: {target_path}"
-        }
+        return {'status': 'error', 'hash': None, 'message': f"File not found: {target_path}"}
 
     try:
-        # 128KB buffer is often faster for modern hardware than 64KB
         with target_path.open("rb") as f:
             while chunk := f.read(131072): 
                 sha256.update(chunk)
         
-        return {
-            'status': 'success',
-            'hash': sha256.hexdigest(),
-            'message': f"Hash generated for {target_path.name}"
-        }
+        # --- LOG HASH GENERATION ---
+        log_event("info", f"SHA-256 hash generated for {target_path.name}")
+        return {'status': 'success', 'hash': sha256.hexdigest(), 'message': f"Hash generated."}
     
-    except PermissionError:
-        return {'status': 'error', 'hash': None, 'message': "Permission denied."}
     except Exception as e:
+        log_event("error", f"Hash generation failed for {target_path.name}: {str(e)}")
         return {'status': 'error', 'hash': None, 'message': str(e)}
 
 def verify_file(file_path, expected_hash):
-    """
-    Verifies if a file matches the expected hash.
-    """
     result = generate_hash(file_path)
+    file_name = Path(file_path).name
     
     if result['status'] == 'error':
         return False, result['message']
         
     if result['hash'] == expected_hash:
-        return True, f"Integrity Intact: {Path(file_path).name}"
+        # --- LOG PASS ---
+        log_event("info", f"Integrity check passed for {file_name}")
+        return True, f"Integrity Intact: {file_name}"
     else:
-        return False, f"SECURITY ALERT: {Path(file_path).name} hash mismatch!"
+        # --- LOG SECURITY ALERT ---
+        log_event("critical", f"INTEGRITY BREACH DETECTED: {file_name} has been modified!")
+        return False, f"SECURITY ALERT: {file_name} hash mismatch!"
