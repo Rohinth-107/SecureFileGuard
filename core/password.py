@@ -3,30 +3,25 @@ import base64
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from core.alert import log_event
-
-# Industry standards for 2026
-ITERATIONS = 480000
-KEY_LENGTH = 32
+from core import config
 
 def generate_salt() -> bytes:
-    """Generates a secure, random 16-byte salt using OS entropy."""
-    salt = os.urandom(16)
+    """Generates a secure, random salt using config defined size."""
+    salt = os.urandom(config.SALT_SIZE)
     log_event("info", "New cryptographic salt generated.")
     return salt
 
 def derive_key(password: str, salt: bytes) -> bytes:
     """
-    Stretches a password into a 32-byte key using PBKDF2.
-    The result is base64 encoded to satisfy Fernet's requirements.
+    Stretches a password into a key using PBKDF2 with config iterations.
     """
     try:
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
-            length=KEY_LENGTH,
+            length=config.KEY_LENGTH,
             salt=salt,
-            iterations=ITERATIONS,
+            iterations=config.KDF_ITERATIONS,
         )
-        # Derive and immediately encode to base64
         raw_key = kdf.derive(password.encode('utf-8'))
         return base64.urlsafe_b64encode(raw_key)
     except Exception as e:
