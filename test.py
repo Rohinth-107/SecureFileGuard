@@ -1,7 +1,28 @@
 # main.py
 from core.availability import create_backup,restore_backup
 from core.integrity import verify_file,generate_hash
-import os
+from core.password import generate_salt, derive_key
+from core.encryptor import encrypt_file, decrypt_file
+
+def test_confidential():
+    # 1. Setup
+    file_to_lock = "secret.txt"
+    with open(file_to_lock, "w") as f: f.write("Top Secret Content")
+    password = "my_password_123"
+
+    # 2. Key Process
+    salt = generate_salt()
+    key = derive_key(password, salt)
+
+    # 3. Encrypt
+    print("Encrypting...")
+    res = encrypt_file(file_to_lock, key)
+    print(res['message'])
+
+    # 4. Decrypt
+    print("\nDecrypting...")
+    res_dec = decrypt_file(res['enc_path'], key)
+    print(res_dec['message'])
 
 def test_availability():
     test_file = "secure_test.txt"
@@ -47,6 +68,6 @@ def test_integrity():
 
 
 if __name__ == "__main__":
-    test_availability()
-    test_integrity()
-
+    #test_availability()
+    #test_integrity()
+    test_confidential()
